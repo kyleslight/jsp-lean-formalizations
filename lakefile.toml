@@ -1,0 +1,11 @@
+name = "Probe"
+defaultTargets = ["Probe"]
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.34.0"
+
+[[lean_lib]]
+name = "Probe"
+globs = ["Probe", "probe.+"]
