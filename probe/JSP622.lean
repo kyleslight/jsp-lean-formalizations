@@ -34,6 +34,7 @@ import Mathlib.Data.Fintype.Pi
 import Mathlib.Data.Fintype.Basic
 import Mathlib.Tactic.NormNum
 import Mathlib.Tactic.FinCases
+import Mathlib.Tactic.IntervalCases
 import Mathlib.Tactic.Push
 
 open Finset
@@ -497,6 +498,236 @@ set_option maxRecDepth 100000 in
 theorem c5k2_needs_three : ¬ CochromFun c5k2 2 := by
   unfold CochromFun IsCliqueOrIndep
   decide
+
+/-! ### The recursion `z(n) ≤ 1 + z(n-3)` and the bound `z(n) ≤ ⌊(n-5)/3⌋ + 3`
+
+Ramsey's theorem `R(3,3) = 6` (`exists_homog_triple_sub`) says that every set of at
+least six vertices contains three vertices spanning a clique or an independent set.
+Removing those three vertices as one part and recursing gives
+
+  `z(n) ≤ 1 + z(n - 3)`  for `n ≥ 6`,
+
+and with the base values `z(5) = z(6) = z(7) = 3` this iterates to
+
+  `z(n) ≤ ⌊(n - 5)/3⌋ + 3`  for `n ≥ 5`,
+
+i.e. `z(n) ≤ n/3 + 2` for every `n`.  This is the strongest *uniform* bound that
+`R(3,3)` alone yields; it agrees with the known values for `n ≤ 10` and exceeds
+them by at most one for `n ≤ 19` (see the table at the end of the file). -/
+
+/-- `S` can be covered by `k` sets, each a clique or an independent set. -/
+@[reducible] def CoverLe (r : α → α → Prop) (S : Finset α) (k : ℕ) : Prop :=
+  ∃ C : Fin k → Finset α, (∀ u ∈ S, ∃ i, u ∈ C i) ∧ ∀ i, IsCliqueOrIndep r (C i)
+
+lemma cochromLe_iff_coverLe {r : α → α → Prop} {k : ℕ} :
+    CochromLe r k ↔ CoverLe r univ k := by
+  constructor
+  · rintro ⟨C, hcov, hcoi⟩; exact ⟨C, fun u _ => hcov u, hcoi⟩
+  · rintro ⟨C, hcov, hcoi⟩; exact ⟨C, fun u => hcov u (mem_univ u), hcoi⟩
+
+/-- Enlarging the number of allowed parts. -/
+lemma coverLe_mono {r : α → α → Prop} {S : Finset α} {k k' : ℕ}
+    (h : CoverLe r S k) (hle : k ≤ k') : CoverLe r S k' := by
+  obtain ⟨C, hcov, hcoi⟩ := h
+  refine ⟨fun i => if h : (i : ℕ) < k then C ⟨i, h⟩ else ∅, ?_, ?_⟩
+  · intro u hu
+    obtain ⟨i, hi⟩ := hcov u hu
+    exact ⟨⟨i, lt_of_lt_of_le i.isLt hle⟩, by simpa using hi⟩
+  · intro i
+    simp only []
+    split_ifs with hlt
+    · exact hcoi ⟨i, hlt⟩
+    · exact Or.inl (fun a ha => by simp at ha)
+
+/-- Any set of at most five vertices can be covered by three clique-or-independent
+parts (a single vertex plus a two-part cover of the remaining at most four). -/
+lemma cover_five (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a) {S : Finset α}
+    (h : S.card ≤ 5) : CoverLe r S 3 := by
+  classical
+  rcases S.eq_empty_or_nonempty with rfl | ⟨v, hv⟩
+  · exact ⟨fun _ => ∅, fun u hu => by simp at hu, fun _ => Or.inl (fun a ha => by simp at ha)⟩
+  · have h4 : (S.erase v).card ≤ 4 := by
+      rw [card_erase_of_mem hv]; omega
+    obtain ⟨A, B, hA, hB, hAB, hAcoi, hBcoi⟩ := two_cover r hsym h4
+    refine ⟨fun i => if i = 0 then {v} else if i = 1 then A else B, ?_, ?_⟩
+    · intro u hu
+      by_cases huv : u = v
+      · exact ⟨0, by simp [huv]⟩
+      · have hu' : u ∈ S.erase v := by simp [huv, hu]
+        rw [← hAB] at hu'
+        rcases mem_union.mp hu' with h' | h'
+        · exact ⟨1, by simp [h']⟩
+        · exact ⟨2, by simp [h']⟩
+    · intro i
+      fin_cases i
+      · show IsCliqueOrIndep r {v}
+        exact Or.inl (fun a ha b hb hab => by
+          simp only [mem_singleton] at ha hb
+          exact absurd (ha.trans hb.symm) hab)
+      · show IsCliqueOrIndep r A; exact hAcoi
+      · show IsCliqueOrIndep r B; exact hBcoi
+
+/-- **Ramsey `R(3,3) = 6`**, set version: every set of at least six vertices
+contains three vertices spanning a clique or an independent set. -/
+lemma exists_homog_triple_sub (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a)
+    {S : Finset α} (hcard : 6 ≤ S.card) :
+    ∃ T ⊆ S, T.card = 3 ∧ IsCliqueOrIndep r T := by
+  classical
+  obtain ⟨v, hv⟩ := card_pos.mp (by omega : 0 < S.card)
+  set N : Finset α := (S.erase v).filter (fun u => r v u) with hN
+  set M : Finset α := (S.erase v).filter (fun u => ¬ r v u) with hM
+  have hsplit : N.card + M.card = S.card - 1 := by
+    rw [hN, hM, card_filter_add_card_filter_not, card_erase_of_mem hv]
+  have h5 : 5 ≤ N.card + M.card := by omega
+  have hNsub : N ⊆ S := fun u hu => mem_of_mem_erase (mem_filter.mp hu).1
+  have hMsub : M ⊆ S := fun u hu => mem_of_mem_erase (mem_filter.mp hu).1
+  rcases Nat.lt_or_ge N.card 3 with hlt | hge
+  · -- at least three non-neighbours of `v`
+    have hM3 : 3 ≤ M.card := by omega
+    obtain ⟨T, hTsub, hTcard⟩ := exists_subset_card_eq hM3
+    have hTne : ∀ u ∈ T, u ≠ v ∧ ¬ r v u := by
+      intro u hu
+      have h1 := hTsub hu
+      simp only [hM, mem_filter, mem_erase] at h1
+      exact ⟨h1.1.1, h1.2⟩
+    by_cases hp : ∃ x ∈ T, ∃ y ∈ T, x ≠ y ∧ ¬ r x y
+    · -- an independent triple together with `v`
+      obtain ⟨x, hx, y, hy, hxy, hnxy⟩ := hp
+      obtain ⟨hxv, hnx⟩ := hTne x hx
+      obtain ⟨hyv, hny⟩ := hTne y hy
+      refine ⟨{v, x, y}, ?_, ?_, Or.inr ?_⟩
+      · intro u hu
+        simp only [mem_insert, mem_singleton] at hu
+        rcases hu with rfl | rfl | rfl
+        · exact hv
+        · exact hMsub (hTsub hx)
+        · exact hMsub (hTsub hy)
+      · have hv' : v ∉ ({x, y} : Finset α) := by
+          simp only [mem_insert, mem_singleton, not_or]
+          exact ⟨hxv.symm, hyv.symm⟩
+        rw [card_insert_of_notMem hv', card_pair hxy]
+      · intro a ha b hb hab
+        simp only [mem_insert, mem_singleton] at ha hb
+        rcases ha with h1 | h1 | h1 <;> rcases hb with h2 | h2 | h2
+        · rw [h1, h2] at hab; exact absurd rfl hab
+        · rw [h1, h2]; exact hnx
+        · rw [h1, h2]; exact hny
+        · rw [h1, h2]; exact fun hh => hnx (hsym x v hh)
+        · rw [h1, h2] at hab; exact absurd rfl hab
+        · rw [h1, h2]; exact hnxy
+        · rw [h1, h2]; exact fun hh => hny (hsym y v hh)
+        · rw [h1, h2]; exact fun hh => hnxy (hsym y x hh)
+        · rw [h1, h2] at hab; exact absurd rfl hab
+    · -- all pairs of `T` are adjacent, so `T` is a clique
+      push Not at hp
+      exact ⟨T, fun u hu => hMsub (hTsub hu), hTcard,
+        Or.inl (fun a ha b hb hab => hp a ha b hb hab)⟩
+  · -- at least three neighbours of `v`
+    obtain ⟨T, hTsub, hTcard⟩ := exists_subset_card_eq hge
+    have hTne : ∀ u ∈ T, u ≠ v ∧ r v u := by
+      intro u hu
+      have h1 := hTsub hu
+      simp only [hN, mem_filter, mem_erase] at h1
+      exact ⟨h1.1.1, h1.2⟩
+    by_cases hp : ∃ x ∈ T, ∃ y ∈ T, x ≠ y ∧ r x y
+    · -- a triangle together with `v`
+      obtain ⟨x, hx, y, hy, hxy, hxy'⟩ := hp
+      obtain ⟨hxv, hxr⟩ := hTne x hx
+      obtain ⟨hyv, hyr⟩ := hTne y hy
+      refine ⟨{v, x, y}, ?_, ?_, Or.inl ?_⟩
+      · intro u hu
+        simp only [mem_insert, mem_singleton] at hu
+        rcases hu with rfl | rfl | rfl
+        · exact hv
+        · exact hNsub (hTsub hx)
+        · exact hNsub (hTsub hy)
+      · have hv' : v ∉ ({x, y} : Finset α) := by
+          simp only [mem_insert, mem_singleton, not_or]
+          exact ⟨hxv.symm, hyv.symm⟩
+        rw [card_insert_of_notMem hv', card_pair hxy]
+      · intro a ha b hb hab
+        simp only [mem_insert, mem_singleton] at ha hb
+        rcases ha with h1 | h1 | h1 <;> rcases hb with h2 | h2 | h2
+        · rw [h1, h2] at hab; exact absurd rfl hab
+        · rw [h1, h2]; exact hxr
+        · rw [h1, h2]; exact hyr
+        · rw [h1, h2]; exact hsym v x hxr
+        · rw [h1, h2] at hab; exact absurd rfl hab
+        · rw [h1, h2]; exact hxy'
+        · rw [h1, h2]; exact hsym v y hyr
+        · rw [h1, h2]; exact hsym x y hxy'
+        · rw [h1, h2] at hab; exact absurd rfl hab
+    · -- all pairs of `T` are non-adjacent, so `T` is independent
+      push Not at hp
+      exact ⟨T, fun u hu => hNsub (hTsub hu), hTcard,
+        Or.inr (fun a ha b hb hab => hp a ha b hb hab)⟩
+
+/-- **The recursion `z(n) ≤ 1 + z(n-3)`**, iterated: every set of at least five
+vertices can be covered by `⌊(#S - 5)/3⌋ + 3` clique-or-independent parts. -/
+lemma cover_div (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a) :
+    ∀ n, ∀ S : Finset α, S.card = n → 5 ≤ n → CoverLe r S ((n - 5) / 3 + 3) := by
+  intro n
+  induction n using Nat.strong_induction_on with
+  | _ n ih =>
+    intro S hS h5
+    rcases Nat.lt_or_ge n 8 with hlt | hge
+    · -- `n = 5, 6, 7`: three parts suffice
+      have hk : (n - 5) / 3 + 3 = 3 := by interval_cases n <;> norm_num
+      rw [hk]
+      rcases Nat.lt_or_ge n 6 with h6 | h6
+      · exact cover_five r hsym (by omega)
+      · obtain ⟨T, hTsub, hTcard, hTcoi⟩ := exists_homog_triple_sub r hsym (S := S) (by omega)
+        have hcard' : (S \ T).card = n - 3 := by
+          rw [card_sdiff_of_subset hTsub, hS, hTcard]
+        obtain ⟨C, hcov, hcoi⟩ := cover_of_card_le r hsym 2 (S \ T) (by omega)
+        refine ⟨Fin.cons T C, ?_, ?_⟩
+        · intro u hu
+          by_cases huT : u ∈ T
+          · exact ⟨0, by simpa using huT⟩
+          · obtain ⟨i, hi⟩ := hcov u (by simp [huT, hu])
+            exact ⟨i.succ, by simpa using hi⟩
+        · intro i
+          refine Fin.cases ?_ (fun j => ?_) i
+          · simpa using hTcoi
+          · simpa using hcoi j
+    · -- `n ≥ 8`: peel off a homogeneous triple and recurse
+      obtain ⟨T, hTsub, hTcard, hTcoi⟩ := exists_homog_triple_sub r hsym (S := S) (by omega)
+      have hcard' : (S \ T).card = n - 3 := by
+        rw [card_sdiff_of_subset hTsub, hS, hTcard]
+      have harith : (n - 3 - 5) / 3 + 3 + 1 = (n - 5) / 3 + 3 := by
+        have h1 : n - 5 = (n - 8) + 3 := by omega
+        have h2 : n - 3 - 5 = n - 8 := by omega
+        rw [h2, h1, Nat.add_div_right _ (by norm_num : 0 < 3)]
+      rw [← harith]
+      obtain ⟨C, hcov, hcoi⟩ := ih (n - 3) (by omega) (S \ T) hcard' (by omega)
+      refine ⟨Fin.cons T C, ?_, ?_⟩
+      · intro u hu
+        by_cases huT : u ∈ T
+        · exact ⟨0, by simpa using huT⟩
+        · obtain ⟨i, hi⟩ := hcov u (by simp [huT, hu])
+          exact ⟨i.succ, by simpa using hi⟩
+      · intro i
+        refine Fin.cases ?_ (fun j => ?_) i
+        · simpa using hTcoi
+        · simpa using hcoi j
+
+/-- **General upper bound**: `z(n) ≤ ⌊(n-5)/3⌋ + 3` for `n ≥ 5`. -/
+theorem cochrom_le_div (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a)
+    (h5 : 5 ≤ Fintype.card α) :
+    CochromLe r ((Fintype.card α - 5) / 3 + 3) :=
+  (cochromLe_iff_coverLe).mpr (cover_div r hsym _ univ rfl h5)
+
+/-- **General upper bound, coarse form**: `z(n) ≤ ⌊n/3⌋ + 2` for every `n`. -/
+theorem cochrom_le_third (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a) :
+    CochromLe r (Fintype.card α / 3 + 2) := by
+  rcases Nat.lt_or_ge (Fintype.card α) 5 with hlt | hge
+  · refine (cochromLe_iff_coverLe).mpr (coverLe_mono (k := 2) ?_ ?_)
+    · exact cover_of_card_le r hsym 2 univ (by rw [card_univ]; omega)
+    · omega
+  · refine (cochromLe_iff_coverLe).mpr
+      (coverLe_mono (k := (Fintype.card α - 5) / 3 + 3) ?_ ?_)
+    · exact (cochromLe_iff_coverLe).mp (cochrom_le_div r hsym hge)
+    · omega
 
 /-! ### The table for small orders -/
 
