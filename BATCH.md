@@ -21,7 +21,7 @@ Per-file re-elaboration times are in the table below.
 | 6 | JSP-000852 | graph theory / hypergraphs | 190 | ~35 min | 2.9 s | **否** — only the lower bound: every linear 3-uniform hypergraph has an independent set with `2n ≤ #I(#I+1)` (i.e. ≥ √(2n)). The matching random-STS upper bound O(√(n log n)) is not formalized. | `19496af` 2026-11-07 14:58:48 |
 | 7 | JSP-000176 | graph theory | 188 | ~30 min | 2.5 s | **是（限定 prescribed degree = 2）** — a graph with no 2-regular subgraph (acyclic) has ≤ n−1 edges, attained by `P₄`. The degree-3 instance (Erdős–Sauer, JaSu23) is not treated. | `803a0d7` 2026-11-07 15:05:55 |
 | 8 | JSP-000839 | graph theory | 254 | ~45 min | 2.7 s | **是** — more than ⌊n²/4⌋ edges force a triangle (Mantel, proved in full via the double count + Cauchy–Schwarz), and one edge-disjoint triangle is best possible (the 4-vertex `K_{2,2}`+edge example has exactly two triangles, sharing an edge). | `5d3262a` 2026-11-07 15:20:00 |
-| 9 | JSP-000622 | graph theory / chromatic | 557 | ~40 min (n=5) + 95 min (general) | 5.7 s (file), 10.7 s (build + audit) | **是** — exact `z(n)` for `n = 1..7`: `1,1,2,2,3,3,3` (upper + witness, both directions), plus the general bound `z(n) ≤ ⌈n/2⌉` for every `n` and Ramsey `R(3,3)=6`. **The general formula is an open problem** — see note below. | `9a12b26` (n=5) / *(this commit)* (general) |
+| 9 | JSP-000622 | graph theory / chromatic | 863 | ~40 min (n=5) + 95 min (general) + 165 min (n=8..19, unfinished) | 48.0 s (file), 49.1 s (build), 45.4 s (audit) | **否** — upper bound `z(n) ≤ ⌊(n-5)/3⌋+3` for all `n ≥ 5` and `z(n) ≤ ⌊n/3⌋+2` for all `n`; exact two-sided `z(9)=z(10)=4`; upper only at `n=13` (`≤5`) and `n=16` (`≤6`); lower only at `n=8` (`≥3`), `n=9,10` (`≥4`). Missing: upper at `n=8` (`z(8)≤3`, needs a hand case analysis) and at `n=11,12,14,15,17,18,19` (all need `z(8)≤3` or `z(12)≤4`, the latter being Mehta's computer search), lower at `n=13..19` (needs `4^13`/`5^16` enumerations or structural proofs). | `bdb66b0` + `ca90f8e` |
 | 10 | JSP-000840 | graph theory | 274 | ~85 min | 2.4 s | **否** — `triCount` machinery, `exists_edge`, `exists_tri` (Mantel contrapositive), `degSum_delete_edge` (edge deletion drops the degree sum by 2) and `triCount_erase_add` are proved; the main induction `rademacher` and `degSum_erase` are still `sorry`. **Not submittable as is.** | `b002903` 2026-11-07 15:55:39 |
 
 ## Statement-fidelity record (per problem)
@@ -59,7 +59,29 @@ Per-file re-elaboration times are in the table below.
    Bhavik Mehta) — states that `z(20) ∈ {6,7}` is **unknown**, and that Gimbel [Gi86]
    proved `z(n) ≍ n/log n`. So "complete for general n" can only mean the exact small-order
    table plus general bounds; that is what is formalized: `z(n)` for `n = 1..7` (both
-   directions) and `z(n) ≤ ⌈n/2⌉` for all `n`. The partition
+   directions), `z(n) ≤ ⌊(n-5)/3⌋ + 3` for all `n ≥ 5` (the `R(3,3)=6` recursion, from
+   `cover_div`), `z(n) ≤ ⌊n/3⌋ + 2` for all `n`, and the two-sided results `z(9)=z(10)=4`
+   (`z9_exact`, `z10_exact`). The lower-bound witnesses use `native_decide`, so
+   `JSP622.w8_needs_three` etc. carry `Lean.ofReduceBool` in their axiom list
+   (verified with `#print axioms` in `probe/Audit622.lean`); `3^11` and `3^12`
+   enumerations exceeded six minutes and were cut from the build.
+
+   **Asymptotics (not formalized).** Erdős Problem 758 states verbatim:
+   "Gimbel [\[Gi86\]] has shown that $z(n) \asymp \frac{n}{\log n}$." — a two-sided
+   `≍` (both bounds), log base not specified there; Gimbel, *Three extremal problems in
+   cochromatic theory*, Rostock. Math. Kolloq. (1986), 73–78. The paper itself was not
+   obtained (no copy online within the search budget), so this rests on the secondary
+   statement in erdosproblems.com/758. Nothing of it is formalized: both directions need
+   the probabilistic method (random-graph first/second moment for the lower bound,
+   and a partition construction for the upper bound), which is far beyond a
+   `Finset`-level encoding.
+
+   **Where the published table stands.** Verbatim from erdosproblems.com/758:
+   "The values of $z(n)$ are now known for $1\leq n\leq 19$: $1,1,2,2,3,3,3,3,4,4,4,4,5,5,5,6,6,6,6.$
+   (The only significant difficulty here is proving $z(12)=4$ - the others follow from easy
+   inductive arguments and the facts that $R(3)=6$ and $R(4)=18$.)" and
+   "It is unknown whether $z(20)=6$ or $7$." — reproduced exactly (my brute force
+   `probe/cochrom_bf.c` agrees on `n = 1..7`: `1,1,2,2,3,3,3`). The partition
    is encoded as a cover by k clique-or-independent sets (equivalent to a partition, noted
    in the file). Both directions for that order.
 10. **JSP-000840** — the statement formalized is Rademacher's "≥ ⌊n/2⌋ triangles when
