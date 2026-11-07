@@ -20,6 +20,8 @@ open JSP1021
 #print axioms JSP1021.exists_transitive_subset_of_pow
 #print axioms JSP1021.exists_transitive_subset
 #print axioms JSP1021.tournament_fin
+#print axioms JSP1021.sharp
+#print axioms JSP1021.answer
 
 /-- `Nat.log2 8 = 3`, so the guarantee for `n = 8` is 4 vertices. -/
 example : Nat.log2 8 + 1 = 4 := by
@@ -43,3 +45,8 @@ theorem cyc_isTournament : IsTournament cyc := by
 /-- The theorem applies to the 3-cycle: it must contain a transitive pair. -/
 example : ∃ S : Finset (Fin 3), TransitiveOn cyc S ∧ Nat.log2 3 + 1 ≤ S.card :=
   tournament_fin 3 (by norm_num) cyc cyc_isTournament
+
+/-- Sharpness at `n = 7`: the Paley tournament's largest transitive
+subtournament has exactly 3 vertices, and `Nat.log2 7 + 1 = 3`. -/
+example : ∃ S : Finset (Fin 7), TransitiveOn (paleyN 7) S ∧ S.card = 3 :=
+  (sharp 7 (by norm_num) (by norm_num)).2.2

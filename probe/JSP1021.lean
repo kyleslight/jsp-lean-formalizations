@@ -8,8 +8,24 @@ Problem (catalog `problems/catalog-1001-1022.md#JSP-001021`, Erdős–Moser 1964
 Answer: every tournament on `n ≥ 1` vertices contains a transitive subtournament
 on `⌊log₂ n⌋ + 1` vertices, and this is best possible.
 
-This file formalizes the lower-bound direction (the guarantee), for an arbitrary
-finite vertex type and specialised to `Fin n`.
+This file formalizes both halves:
+
+* the guarantee (`exists_transitive_subset`): every tournament on a nonempty
+  finite vertex set has a transitive subtournament on `Nat.log2 n + 1`
+  vertices;
+* the sharpness (`sharp`): for `4 <= n <= 7` there is an explicit tournament
+  (the Paley tournament on 7 vertices, restricted to the first `n` vertices)
+  whose largest transitive subtournament has *exactly* `Nat.log2 n + 1 = 3`
+  vertices.  The bound `Nat.log2 n + 1` is therefore not improvable as a
+  function of `n`; `n = 7` is the classical witness (the Paley tournament
+  `P_7` has no transitive 4-subtournament).
+
+Note on the exact extremal function: the true minimum over `n`-vertex
+tournaments of the largest transitive subtournament is `TT`-inverse, and it is
+*not* `Nat.log2 n + 1` for every `n` (e.g. every tournament on 14 vertices has
+a transitive 5-subtournament, since `TT(5) = 14`, while `Nat.log2 14 + 1 = 4`).
+The content proved here is the classical statement: `Nat.log2 n + 1` is a
+guaranteed lower bound for all `n`, and it is attained.
 
 A tournament is modelled as a binary relation `r` that is irreflexive and, for
 distinct vertices, holds in exactly one direction. A vertex set is *transitive*
@@ -27,6 +43,8 @@ import Mathlib.Data.Finset.Card
 import Mathlib.Tactic.Linarith
 import Mathlib.Tactic.Ring
 import Mathlib.Tactic.NormNum
+import Mathlib.Tactic.IntervalCases
+import Mathlib.Data.Fintype.Powerset
 
 open Finset
 
@@ -35,11 +53,11 @@ namespace JSP1021
 variable {α : Type}
 
 /-- A tournament relation: irreflexive, and exactly one direction on distinct vertices. -/
-def IsTournament (r : α → α → Prop) : Prop :=
+@[reducible] def IsTournament (r : α → α → Prop) : Prop :=
   (∀ a, ¬ r a a) ∧ ∀ a b, a ≠ b → (r a b ↔ ¬ r b a)
 
 /-- `S` induces a transitive subtournament: `r` is transitive on `S`. -/
-def TransitiveOn (r : α → α → Prop) (S : Finset α) : Prop :=
+@[reducible] def TransitiveOn (r : α → α → Prop) (S : Finset α) : Prop :=
   ∀ a ∈ S, ∀ b ∈ S, ∀ c ∈ S, r a b → r b c → r a c
 
 /-- Out-neighbourhood of `v`. -/
@@ -231,5 +249,49 @@ theorem tournament_fin (n : ℕ) (hn : 1 ≤ n) (r : Fin n → Fin n → Prop) [
   have hne : Nonempty (Fin n) := ⟨⟨0, hn⟩⟩
   have h := exists_transitive_subset (α := Fin n) r hT hne
   simpa using h
+
+
+/-! ## Sharpness: `Nat.log2 n + 1` is attained -/
+
+/-- The Paley tournament on `n ≤ 7` vertices: `a → b` iff `b - a` is one of
+the nonzero quadratic residues `1, 2, 4` mod 7.  For `n = 7` this is the Paley
+tournament `P_7`; for smaller `n` it is the restriction to the first `n`
+vertices. -/
+def paleyN (n : ℕ) : Fin n → Fin n → Prop :=
+  fun a b =>
+    (b.val + 7 - a.val) % 7 = 1 ∨ (b.val + 7 - a.val) % 7 = 2 ∨
+      (b.val + 7 - a.val) % 7 = 4
+
+instance paleyN_dec (n : ℕ) : DecidableRel (paleyN n) := fun a b =>
+  inferInstanceAs
+    (Decidable ((b.val + 7 - a.val) % 7 = 1 ∨ (b.val + 7 - a.val) % 7 = 2 ∨
+      (b.val + 7 - a.val) % 7 = 4))
+
+set_option maxRecDepth 100000
+
+/-- **JSP-001021, sharpness**: for `4 ≤ n ≤ 7` the Paley tournament on `n`
+vertices has largest transitive subtournament exactly `Nat.log2 n + 1 = 3`.
+For `n = 7` this is the classical fact that `P_7` has no transitive
+4-subtournament (`TT(4) = 8`). -/
+theorem sharp (n : ℕ) (h4 : 4 ≤ n) (h7 : n ≤ 7) :
+    IsTournament (paleyN n) ∧
+      (∀ S : Finset (Fin n), TransitiveOn (paleyN n) S → S.card ≤ Nat.log2 n + 1) ∧
+      (∃ S : Finset (Fin n), TransitiveOn (paleyN n) S ∧ S.card = Nat.log2 n + 1) := by
+  interval_cases n <;> exact ⟨by decide, by decide, by decide⟩
+
+/-- **JSP-001021, both halves packaged.**  For every `n ≥ 1` the guarantee
+`Nat.log2 n + 1` holds for *every* tournament on `n` vertices; for `4 ≤ n ≤ 7`
+it is attained, i.e. there is a tournament whose largest transitive
+subtournament has exactly `Nat.log2 n + 1` vertices. -/
+theorem answer (n : ℕ) (hn : 1 ≤ n) :
+    (∀ (r : Fin n → Fin n → Prop) [DecidableRel r], IsTournament r →
+        ∃ S : Finset (Fin n), TransitiveOn r S ∧ Nat.log2 n + 1 ≤ S.card) ∧
+      (4 ≤ n → n ≤ 7 → ∃ r : Fin n → Fin n → Prop, ∃ _ : DecidableRel r,
+        IsTournament r ∧
+          (∀ S : Finset (Fin n), TransitiveOn r S → S.card ≤ Nat.log2 n + 1) ∧
+          (∃ S : Finset (Fin n), TransitiveOn r S ∧ S.card = Nat.log2 n + 1)) := by
+  refine ⟨fun r _ hT => tournament_fin n hn r hT, fun h4 h7 => ?_⟩
+  exact ⟨paleyN n, paleyN_dec n, (sharp n h4 h7).1, (sharp n h4 h7).2.1,
+    (sharp n h4 h7).2.2⟩
 
 end JSP1021
