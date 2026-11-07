@@ -729,6 +729,81 @@ theorem cochrom_le_third (r : α → α → Prop) (hsym : ∀ a b, r a b → r b
     · exact (cochromLe_iff_coverLe).mp (cochrom_le_div r hsym hge)
     · omega
 
+/-! ### Lower bounds: explicit witnesses
+
+Each `adj n A` below is a loopless symmetric graph on `Fin n`, given by the
+adjacency lists found by the exhaustive search in `probe/cochrom_bf.c` and
+independently re-checked by the pruned search `zadj`.  The comment records its
+cochromatic number.
+
+`native_decide` is used here (it adds `Lean.ofReduceBool` to the axiom list);
+plain `decide` needs minutes for `3^10` and hours for `3^12`.  The axiom is
+recorded in `BATCH.md`.  The analogous witnesses at orders 11 and 12 were
+found (`probe/cochrom_bf.c`) but their `3^11`/`3^12` enumerations were cut
+from the build: `3^11` alone exceeded six minutes of `native_decide`. -/
+
+/-- A graph on `Fin n` encoded by a single bit mask: `bm n m a b` holds iff
+`a ≠ b` and bit `a * n + b` of `m` is set.  Every mask below is symmetric. -/
+@[reducible] def bm (n m : ℕ) (a b : Fin n) : Prop :=
+  a ≠ b ∧ Nat.testBit m (a.val * n + b.val) = true
+
+instance (n m : ℕ) : DecidableRel (bm n m) := fun a b =>
+  inferInstanceAs (Decidable (bm n m a b))
+
+set_option maxRecDepth 100000
+
+/-- `z = 3` on 8 vertices. -/
+theorem w8_needs_three : ¬ CochromFun (bm 8 4475894029268130166) 2 := by native_decide
+
+/-- `z = 4` on 9 vertices. -/
+theorem w9_needs_four : ¬ CochromFun (bm 9 152114351730168272042550) 3 := by native_decide
+
+/-- `z = 4` on 10 vertices. -/
+theorem w10_needs_four : ¬ CochromFun (bm 10 312162554632375861681761579052) 3 := by
+  native_decide
+
+/-! ### Upper bounds at fixed orders where the recursion is tight -/
+
+/-- Upper bound at order 9: `z ≤ 4` (the recursion `1 + z(6)` gives `1 + 3`). -/
+theorem z9_upper (r : Fin 9 → Fin 9 → Prop) (hsym : ∀ a b, r a b → r b a) :
+    CochromFun r 4 := by
+  have h : CochromLe r ((9 - 5) / 3 + 3) := cochrom_le_div r hsym (by simp)
+  rw [show (9 - 5) / 3 + 3 = 4 by norm_num] at h
+  exact cover_to_fun h
+
+/-- Upper bound at order 10: `z ≤ 4` (the recursion `1 + z(7)` gives `1 + 3`). -/
+theorem z10_upper (r : Fin 10 → Fin 10 → Prop) (hsym : ∀ a b, r a b → r b a) :
+    CochromFun r 4 := by
+  have h : CochromLe r ((10 - 5) / 3 + 3) := cochrom_le_div r hsym (by simp)
+  rw [show (10 - 5) / 3 + 3 = 4 by norm_num] at h
+  exact cover_to_fun h
+
+/-- Upper bound at order 13: `z ≤ 5`. -/
+theorem z13_upper (r : Fin 13 → Fin 13 → Prop) (hsym : ∀ a b, r a b → r b a) :
+    CochromFun r 5 := by
+  have h : CochromLe r ((13 - 5) / 3 + 3) := cochrom_le_div r hsym (by simp)
+  rw [show (13 - 5) / 3 + 3 = 5 by norm_num] at h
+  exact cover_to_fun h
+
+/-- Upper bound at order 16: `z ≤ 6`. -/
+theorem z16_upper (r : Fin 16 → Fin 16 → Prop) (hsym : ∀ a b, r a b → r b a) :
+    CochromFun r 6 := by
+  have h : CochromLe r ((16 - 5) / 3 + 3) := cochrom_le_div r hsym (by simp)
+  rw [show (16 - 5) / 3 + 3 = 6 by norm_num] at h
+  exact cover_to_fun h
+
+/-- The two-sided results at orders 9 and 10. -/
+theorem z9_exact :
+    (∀ (r : Fin 9 → Fin 9 → Prop), (∀ a b, r a b → r b a) → CochromFun r 4) ∧
+    ¬ CochromFun (bm 9 152114351730168272042550) 3 :=
+  ⟨z9_upper, w9_needs_four⟩
+
+/-- The two-sided result at order 10. -/
+theorem z10_exact :
+    (∀ (r : Fin 10 → Fin 10 → Prop), (∀ a b, r a b → r b a) → CochromFun r 4) ∧
+    ¬ CochromFun (bm 10 312162554632375861681761579052) 3 :=
+  ⟨z10_upper, w10_needs_four⟩
+
 /-! ### The table for small orders -/
 
 theorem z_one : (∀ (r : Fin 1 → Fin 1 → Prop) [DecidableRel r],
