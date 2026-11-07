@@ -207,4 +207,351 @@ theorem answer :
       ¬ CochromFun c5 2 ∧ CochromFun c5 3 :=
   ⟨fun r _ hsym => cover_to_fun (cochrom_le_three r hsym), c5_needs_three, c5_three⟩
 
+/-! ## General graph order
+
+The worst-case cochromatic number over graphs of order `n` is `z(n)`.  It is
+*not* given by a closed formula: the exact values are known only for
+`n ≤ 19` (Erdős Problem 758: `1,1,2,2,3,3,3,3,4,4,4,4,5,5,5,6,6,6,6`, with
+`z(12) = 4` the one hard case), the value at `n = 20` is unknown (`6` or `7`),
+and asymptotically `z(n) ≍ n / log n` (Gimbel 1986).  So "the formula for all
+`n`" is an open problem; what is formalized below is
+
+* a general upper bound for every order: `z(n) ≤ ⌈n/2⌉` (`cochrom_le_half`);
+* Ramsey `R(3,3) = 6` (`exists_homog_triple`), the engine of the recursion
+  `z(n) ≤ 1 + z(n-3)`;
+* the exact values for `n = 1, …, 7`, i.e. `1,1,2,2,3,3,3`, both directions.
+-/
+
+/-- A two-element set is a clique or an independent set. -/
+lemma coi_pair (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a)
+    {a b : α} (_hab : a ≠ b) : IsCliqueOrIndep r {a, b} := by
+  by_cases h : r a b
+  · refine Or.inl ?_
+    intro x hx y hy hxy
+    simp only [mem_insert, mem_singleton] at hx hy
+    rcases hx with h1 | h1 <;> rcases hy with h2 | h2
+    · rw [h1, h2] at hxy; exact absurd rfl hxy
+    · rw [h1, h2]; exact h
+    · rw [h1, h2]; exact hsym a b h
+    · rw [h1, h2] at hxy; exact absurd rfl hxy
+  · refine Or.inr ?_
+    intro x hx y hy hxy
+    simp only [mem_insert, mem_singleton] at hx hy
+    rcases hx with h1 | h1 <;> rcases hy with h2 | h2
+    · rw [h1, h2] at hxy; exact absurd rfl hxy
+    · rw [h1, h2]; exact h
+    · rw [h1, h2]; exact fun h' => h (hsym b a h')
+    · rw [h1, h2] at hxy; exact absurd rfl hxy
+
+/-- Every set of at most two vertices is a clique or an independent set. -/
+lemma coi_of_card_le_two (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a)
+    {S : Finset α} (h : S.card ≤ 2) : IsCliqueOrIndep r S := by
+  rcases Nat.lt_or_ge S.card 2 with hlt | hge
+  · have h1 : S.card ≤ 1 := by omega
+    refine Or.inl ?_
+    intro x hx y hy hxy
+    exact absurd (card_le_one.mp h1 x hx y hy) hxy
+  · have h2 : S.card = 2 := by omega
+    obtain ⟨a, b, hab, rfl⟩ := card_eq_two.mp h2
+    exact coi_pair r hsym hab
+
+/-- A finite vertex set of at most `2k` elements can be covered by `k`
+clique-or-independent parts. -/
+lemma cover_of_card_le (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a) :
+    ∀ k : ℕ, ∀ S : Finset α, S.card ≤ 2 * k →
+      ∃ C : Fin k → Finset α, (∀ u ∈ S, ∃ i, u ∈ C i) ∧
+        ∀ i, IsCliqueOrIndep r (C i) := by
+  intro k
+  induction k with
+  | zero =>
+    intro S h
+    have hS : S = ∅ := card_eq_zero.mp (by omega)
+    refine ⟨Fin.elim0, ?_, fun i => i.elim0⟩
+    intro u hu
+    rw [hS] at hu
+    simp at hu
+  | succ k ih =>
+    intro S h
+    by_cases hsmall : S.card ≤ 2
+    · exact ⟨fun _ => S, fun u hu => ⟨0, hu⟩,
+        fun _ => coi_of_card_le_two r hsym hsmall⟩
+    · push Not at hsmall
+      have hlt : 1 < S.card := by omega
+      obtain ⟨a, ha, b, hb, hab⟩ := one_lt_card.mp hlt
+      have hsub : ({a, b} : Finset α) ⊆ S := by
+        intro x hx
+        simp only [mem_insert, mem_singleton] at hx
+        rcases hx with rfl | rfl
+        · exact ha
+        · exact hb
+      set R : Finset α := S \ {a, b} with hR
+      have hRcard : R.card ≤ 2 * k := by
+        rw [hR, card_sdiff_of_subset hsub, card_pair hab, Nat.sub_le_iff_le_add]
+        omega
+      obtain ⟨C, hcov, hcoi⟩ := ih R hRcard
+      refine ⟨Fin.cons {a, b} C, ?_, ?_⟩
+      · intro u hu
+        by_cases hmem : u ∈ ({a, b} : Finset α)
+        · exact ⟨0, by simpa using hmem⟩
+        · have huR : u ∈ R := by simp [hR, hu, hmem]
+          obtain ⟨i, hi⟩ := hcov u huR
+          exact ⟨i.succ, by simpa using hi⟩
+      · intro i
+        refine Fin.cases ?_ (fun j => ?_) i
+        · simpa using coi_pair r hsym hab
+        · simpa using hcoi j
+
+/-- **General upper bound**: a graph on at most `2k` vertices can always be
+partitioned into `k` clique-or-independent parts (pair up the vertices). -/
+lemma cochrom_le_half (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a)
+    (k : ℕ) (h : Fintype.card α ≤ 2 * k) : CochromLe r k := by
+  obtain ⟨C, hcov, hcoi⟩ := cover_of_card_le r hsym k univ (by simpa using h)
+  exact ⟨C, fun u => hcov u (mem_univ u), hcoi⟩
+
+/-- **Ramsey `R(3,3) = 6`**: every graph on at least six vertices has three
+vertices spanning a clique or an independent set. -/
+lemma exists_homog_triple (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a)
+    (hcard : 6 ≤ Fintype.card α) :
+    ∃ T : Finset α, T.card = 3 ∧ IsCliqueOrIndep r T := by
+  classical
+  obtain ⟨v⟩ := Fintype.card_pos_iff.mp (by omega : 0 < Fintype.card α)
+  set N : Finset α := (univ.erase v).filter (fun u => r v u) with hN
+  set M : Finset α := (univ.erase v).filter (fun u => ¬ r v u) with hM
+  have hsplit : N.card + M.card = Fintype.card α - 1 := by
+    rw [hN, hM, card_filter_add_card_filter_not, card_erase_of_mem (mem_univ v), card_univ]
+  have h5 : 5 ≤ N.card + M.card := by omega
+  rcases Nat.lt_or_ge N.card 3 with hlt | hge
+  · -- at least three non-neighbours of `v`
+    have hM3 : 3 ≤ M.card := by omega
+    obtain ⟨S, hSsub, hScard⟩ := exists_subset_card_eq hM3
+    have hSne : ∀ u ∈ S, u ≠ v ∧ ¬ r v u := by
+      intro u hu
+      have h1 := hSsub hu
+      simp only [hM, mem_filter, mem_erase] at h1
+      exact ⟨h1.1.1, h1.2⟩
+    by_cases hp : ∃ x ∈ S, ∃ y ∈ S, x ≠ y ∧ ¬ r x y
+    · -- an independent triple together with `v`
+      obtain ⟨x, hx, y, hy, hxy, hnxy⟩ := hp
+      obtain ⟨hxv, hnx⟩ := hSne x hx
+      obtain ⟨hyv, hny⟩ := hSne y hy
+      refine ⟨{v, x, y}, ?_, Or.inr ?_⟩
+      · have hv : v ∉ ({x, y} : Finset α) := by
+          simp only [mem_insert, mem_singleton, not_or]
+          exact ⟨hxv.symm, hyv.symm⟩
+        rw [card_insert_of_notMem hv, card_pair hxy]
+      · intro a ha b hb hab
+        simp only [mem_insert, mem_singleton] at ha hb
+        rcases ha with h1 | h1 | h1 <;> rcases hb with h2 | h2 | h2
+        · rw [h1, h2] at hab; exact absurd rfl hab
+        · rw [h1, h2]; exact hnx
+        · rw [h1, h2]; exact hny
+        · rw [h1, h2]; exact fun hh => hnx (hsym x v hh)
+        · rw [h1, h2] at hab; exact absurd rfl hab
+        · rw [h1, h2]; exact hnxy
+        · rw [h1, h2]; exact fun hh => hny (hsym y v hh)
+        · rw [h1, h2]; exact fun hh => hnxy (hsym y x hh)
+        · rw [h1, h2] at hab; exact absurd rfl hab
+    · -- all pairs of `S` are adjacent, so `S` is a clique
+      push Not at hp
+      exact ⟨S, hScard, Or.inl (fun a ha b hb hab => hp a ha b hb hab)⟩
+  · -- at least three neighbours of `v`
+    obtain ⟨S, hSsub, hScard⟩ := exists_subset_card_eq hge
+    have hSne : ∀ u ∈ S, u ≠ v ∧ r v u := by
+      intro u hu
+      have h1 := hSsub hu
+      simp only [hN, mem_filter, mem_erase] at h1
+      exact ⟨h1.1.1, h1.2⟩
+    by_cases hp : ∃ x ∈ S, ∃ y ∈ S, x ≠ y ∧ r x y
+    · -- a triangle together with `v`
+      obtain ⟨x, hx, y, hy, hxy, hxy'⟩ := hp
+      obtain ⟨hxv, hxr⟩ := hSne x hx
+      obtain ⟨hyv, hyr⟩ := hSne y hy
+      refine ⟨{v, x, y}, ?_, Or.inl ?_⟩
+      · have hv : v ∉ ({x, y} : Finset α) := by
+          simp only [mem_insert, mem_singleton, not_or]
+          exact ⟨hxv.symm, hyv.symm⟩
+        rw [card_insert_of_notMem hv, card_pair hxy]
+      · intro a ha b hb hab
+        simp only [mem_insert, mem_singleton] at ha hb
+        rcases ha with h1 | h1 | h1 <;> rcases hb with h2 | h2 | h2
+        · rw [h1, h2] at hab; exact absurd rfl hab
+        · rw [h1, h2]; exact hxr
+        · rw [h1, h2]; exact hyr
+        · rw [h1, h2]; exact hsym v x hxr
+        · rw [h1, h2] at hab; exact absurd rfl hab
+        · rw [h1, h2]; exact hxy'
+        · rw [h1, h2]; exact hsym v y hyr
+        · rw [h1, h2]; exact hsym x y hxy'
+        · rw [h1, h2] at hab; exact absurd rfl hab
+    · -- no two of `S` are adjacent, so `S` is independent
+      push Not at hp
+      exact ⟨S, hScard, Or.inr (fun a ha b hb hab => hp a ha b hb hab)⟩
+
+/-- A set of at most four vertices can be covered by two clique-or-independent
+parts. -/
+lemma two_cover (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a) {R : Finset α}
+    (h : R.card ≤ 4) :
+    ∃ A B : Finset α, A ⊆ R ∧ B ⊆ R ∧ A ∪ B = R ∧
+      IsCliqueOrIndep r A ∧ IsCliqueOrIndep r B := by
+  rcases Nat.lt_or_ge R.card 2 with hlt | hge
+  · exact ⟨R, ∅, subset_rfl, empty_subset R, by simp,
+      coi_of_card_le_two r hsym (by omega), Or.inl (fun a ha => by simp at ha)⟩
+  · obtain ⟨a, ha, b, hb, hab⟩ := one_lt_card.mp hge
+    have hsub : ({a, b} : Finset α) ⊆ R := by
+      intro x hx
+      simp only [mem_insert, mem_singleton] at hx
+      rcases hx with rfl | rfl
+      · exact ha
+      · exact hb
+    refine ⟨{a, b}, R \ {a, b}, hsub, sdiff_subset, union_sdiff_of_subset hsub,
+      coi_pair r hsym hab, ?_⟩
+    refine coi_of_card_le_two r hsym ?_
+    rw [card_sdiff_of_subset hsub, card_pair hab]
+    omega
+
+/-- **`z(7) ≤ 3`**: every graph on seven vertices can be partitioned into three
+clique-or-independent parts.  (The trivial pairing bound only gives four.) -/
+lemma cochrom_le_three_of_seven (r : α → α → Prop) (hsym : ∀ a b, r a b → r b a)
+    (hcard : Fintype.card α = 7) : CochromLe r 3 := by
+  classical
+  obtain ⟨T, hTcard, hTcoi⟩ := exists_homog_triple r hsym (by omega)
+  have hR : (univ \ T).card ≤ 4 := by
+    rw [card_sdiff_of_subset (subset_univ _), card_univ, hTcard]
+    omega
+  obtain ⟨A, B, hA, hB, hAB, hAcoi, hBcoi⟩ := two_cover r hsym hR
+  refine ⟨fun i => if i = (0 : Fin 3) then T else if i = (1 : Fin 3) then A else B,
+    ?_, ?_⟩
+  · intro u
+    by_cases hu : u ∈ T
+    · exact ⟨0, by simp [hu]⟩
+    · have huR : u ∈ univ \ T := by simp [hu]
+      rw [← hAB] at huR
+      rcases mem_union.mp huR with h | h
+      · exact ⟨1, by simp [h]⟩
+      · exact ⟨2, by simp [h]⟩
+  · intro i
+    fin_cases i
+    · show IsCliqueOrIndep r T
+      exact hTcoi
+    · show IsCliqueOrIndep r A
+      exact hAcoi
+    · show IsCliqueOrIndep r B
+      exact hBcoi
+
+/-! ### Witnesses for orders 3, 4, 6, 7 -/
+
+/-- The path on three vertices. -/
+def p3 : Fin 3 → Fin 3 → Prop := fun a b => (a.val + 1 = b.val) ∨ (b.val + 1 = a.val)
+
+instance p3_dec : DecidableRel p3 := fun a b =>
+  inferInstanceAs (Decidable ((a.val + 1 = b.val) ∨ (b.val + 1 = a.val)))
+
+set_option maxRecDepth 100000 in
+theorem p3_needs_two : ¬ CochromFun p3 1 := by
+  unfold CochromFun IsCliqueOrIndep
+  decide
+
+/-- The path on four vertices. -/
+def p4 : Fin 4 → Fin 4 → Prop := fun a b => (a.val + 1 = b.val) ∨ (b.val + 1 = a.val)
+
+instance p4_dec : DecidableRel p4 := fun a b =>
+  inferInstanceAs (Decidable ((a.val + 1 = b.val) ∨ (b.val + 1 = a.val)))
+
+set_option maxRecDepth 100000 in
+theorem p4_needs_two : ¬ CochromFun p4 1 := by
+  unfold CochromFun IsCliqueOrIndep
+  decide
+
+/-- The 5-cycle on the numbers `0, …, 4`, written out explicitly (so that it
+can be reused on larger vertex sets). -/
+def cyc5 (i j : ℕ) : Prop :=
+  (i = 0 ∧ j = 1) ∨ (i = 1 ∧ j = 0) ∨ (i = 1 ∧ j = 2) ∨ (i = 2 ∧ j = 1) ∨
+  (i = 2 ∧ j = 3) ∨ (i = 3 ∧ j = 2) ∨ (i = 3 ∧ j = 4) ∨ (i = 4 ∧ j = 3) ∨
+  (i = 4 ∧ j = 0) ∨ (i = 0 ∧ j = 4)
+
+instance cyc5_dec (i j : ℕ) : Decidable (cyc5 i j) := by
+  unfold cyc5; infer_instance
+
+/-- The 5-cycle together with one isolated vertex (`C_5 ∪ K_1`). -/
+def c5k1 : Fin 6 → Fin 6 → Prop := fun a b =>
+  (a.val < 5 ∧ b.val < 5 ∧ cyc5 a.val b.val) ∨ (a.val = 5 ∧ b.val = 5 ∧ a ≠ b)
+
+instance c5k1_dec : DecidableRel c5k1 := fun a b =>
+  inferInstanceAs (Decidable ((a.val < 5 ∧ b.val < 5 ∧ cyc5 a.val b.val) ∨
+    (a.val = 5 ∧ b.val = 5 ∧ a ≠ b)))
+
+set_option maxRecDepth 100000 in
+theorem c5k1_needs_three : ¬ CochromFun c5k1 2 := by
+  unfold CochromFun IsCliqueOrIndep
+  decide
+
+/-- The 5-cycle together with one edge (`C_5 ∪ K_2`). -/
+def c5k2 : Fin 7 → Fin 7 → Prop := fun a b =>
+  (a.val < 5 ∧ b.val < 5 ∧ cyc5 a.val b.val) ∨ (5 ≤ a.val ∧ 5 ≤ b.val ∧ a ≠ b)
+
+instance c5k2_dec : DecidableRel c5k2 := fun a b =>
+  inferInstanceAs (Decidable ((a.val < 5 ∧ b.val < 5 ∧ cyc5 a.val b.val) ∨
+    (5 ≤ a.val ∧ 5 ≤ b.val ∧ a ≠ b)))
+
+set_option maxRecDepth 100000 in
+theorem c5k2_needs_three : ¬ CochromFun c5k2 2 := by
+  unfold CochromFun IsCliqueOrIndep
+  decide
+
+/-! ### The table for small orders -/
+
+theorem z_one : (∀ (r : Fin 1 → Fin 1 → Prop) [DecidableRel r],
+    (∀ a b, r a b → r b a) → CochromFun r 1) ∧
+    ¬ CochromFun (fun (_ : Fin 1) (_ : Fin 1) => False) 0 := by
+  refine ⟨fun r _ hsym => cover_to_fun (cochrom_le_half r hsym 1 (by decide)), ?_⟩
+  unfold CochromFun IsCliqueOrIndep
+  decide
+
+/-- The complete graph on two vertices. -/
+def k2 : Fin 2 → Fin 2 → Prop := fun a b => a ≠ b
+
+instance k2_dec : DecidableRel k2 := fun a b => inferInstanceAs (Decidable (a ≠ b))
+
+theorem z_two : (∀ (r : Fin 2 → Fin 2 → Prop) [DecidableRel r],
+    (∀ a b, r a b → r b a) → CochromFun r 1) ∧ ¬ CochromFun k2 0 :=
+  ⟨fun r _ hsym => cover_to_fun (cochrom_le_half r hsym 1 (by decide)), by
+    unfold CochromFun IsCliqueOrIndep
+    decide⟩
+
+theorem z_three : (∀ (r : Fin 3 → Fin 3 → Prop) [DecidableRel r],
+    (∀ a b, r a b → r b a) → CochromFun r 2) ∧ ¬ CochromFun p3 1 :=
+  ⟨fun r _ hsym => cover_to_fun (cochrom_le_half r hsym 2 (by decide)), p3_needs_two⟩
+
+theorem z_four : (∀ (r : Fin 4 → Fin 4 → Prop) [DecidableRel r],
+    (∀ a b, r a b → r b a) → CochromFun r 2) ∧ ¬ CochromFun p4 1 :=
+  ⟨fun r _ hsym => cover_to_fun (cochrom_le_half r hsym 2 (by decide)), p4_needs_two⟩
+
+theorem z_six : (∀ (r : Fin 6 → Fin 6 → Prop) [DecidableRel r],
+    (∀ a b, r a b → r b a) → CochromFun r 3) ∧ ¬ CochromFun c5k1 2 :=
+  ⟨fun r _ hsym => cover_to_fun (cochrom_le_half r hsym 3 (by decide)), c5k1_needs_three⟩
+
+theorem z_seven : (∀ (r : Fin 7 → Fin 7 → Prop) [DecidableRel r],
+    (∀ a b, r a b → r b a) → CochromFun r 3) ∧ ¬ CochromFun c5k2 2 :=
+  ⟨fun r _ hsym => cover_to_fun (cochrom_le_three_of_seven r hsym rfl), c5k2_needs_three⟩
+
+/-- **JSP-000622, small orders**: `z(1) = z(2) = 1`, `z(3) = z(4) = 2`,
+`z(5) = z(6) = z(7) = 3`, together with the general bound `z(n) ≤ ⌈n/2⌉`
+for every order. -/
+theorem answer_general :
+    (∀ (k : ℕ) (r : Fin (2 * k) → Fin (2 * k) → Prop) [DecidableRel r],
+        (∀ a b, r a b → r b a) → CochromFun r k) ∧
+      (∀ (r : Fin 3 → Fin 3 → Prop) [DecidableRel r],
+        (∀ a b, r a b → r b a) → CochromFun r 2) ∧
+      (∀ (r : Fin 4 → Fin 4 → Prop) [DecidableRel r],
+        (∀ a b, r a b → r b a) → CochromFun r 2) ∧
+      (∀ (r : Fin 6 → Fin 6 → Prop) [DecidableRel r],
+        (∀ a b, r a b → r b a) → CochromFun r 3) ∧
+      (∀ (r : Fin 7 → Fin 7 → Prop) [DecidableRel r],
+        (∀ a b, r a b → r b a) → CochromFun r 3) ∧
+      ¬ CochromFun p3 1 ∧ ¬ CochromFun p4 1 ∧ ¬ CochromFun c5 2 ∧
+      ¬ CochromFun c5k1 2 ∧ ¬ CochromFun c5k2 2 := by
+  exact ⟨fun k r _ hsym => cover_to_fun (cochrom_le_half r hsym k (by simp)),
+    z_three.1, z_four.1, z_six.1, z_seven.1,
+    z_three.2, z_four.2, c5_needs_three, c5k1_needs_three, c5k2_needs_three⟩
+
 end JSP622
