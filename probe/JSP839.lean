@@ -11,17 +11,21 @@ edge count) the graph must contain a triangle (Mantel's theorem), but two
 edge-disjoint triangles cannot be guaranteed: in `K_{2,2}` plus one extra
 edge, every triangle uses the extra edge, so the maximum number of
 edge-disjoint triangles is 1.  (The same holds for
-`K_{floor(n/2),ceil(n/2)}` plus one extra edge for every `n`; the `n = 4`
-instance is checked here.)
+`K_{floor(n/2),ceil(n/2)}` plus one extra edge for every `n`, which is what
+`answer_general` proves: for every `n >= 4` the example `exV n` on the
+`n`-element vertex set `V n` has at least `floor(n^2/4) + 1` edges, contains a
+triangle, and any two of its triangles share an edge — so one edge-disjoint
+triangle is optimal at every order.  The `n = 4` instance is also kept as
+`sharp_four`.)
 
 This file proves BOTH halves:
 
 * `exists_triangle` — Mantel's theorem in the contrapositive: a graph whose
   degree sum satisfies `2 * (n^2 / 4 + 1) <= degSum` (i.e. more than
   `floor(n^2/4)` edges) contains a triangle;
-* `sharp_four` — the 4-vertex example has exactly two triangles and any two
-  distinct triangles share an edge, so at most one edge-disjoint triangle
-  exists.
+* `answer_general` — for every `n >= 4` an `n`-vertex graph with more than
+  `floor(n^2/4)` edges in which any two distinct triangles share an edge
+  (`sharp_four` is its `n = 4` instance).
 
 Mantel's theorem is proved in full here: for a triangle-free graph,
 `2 * degSum <= n^2`, via the double count `sum_v d(v)^2 <= e * n` and
@@ -31,6 +35,7 @@ import Mathlib.Data.Finset.Card
 import Mathlib.Data.Finset.Powerset
 import Mathlib.Data.Fintype.Card
 import Mathlib.Data.Fintype.Powerset
+import Mathlib.Data.Fintype.Sum
 import Mathlib.Algebra.BigOperators.Group.Finset.Basic
 import Mathlib.Algebra.BigOperators.Ring.Finset
 import Mathlib.Algebra.Order.BigOperators.Group.Finset
@@ -250,5 +255,390 @@ theorem answer (r : α → α → Prop) [DecidableRel r]
     (h : 2 * (Fintype.card α ^ 2 / 4 + 1) ≤ degSum r univ) :
     ∃ T : Finset α, IsTri r T :=
   exists_triangle r hirr hsym h
+
+
+/-! ## Sharpness for general `n`
+
+The example: `K_{⌊n/2⌋,⌈n/2⌉}` plus the single edge inside the larger part.
+Vertex set `V n = Fin (n/2) ⊕ Fin (n - n/2)`, so `Fintype.card (V n) = n`
+(`card_V`); the left side is the `Sum.inl` half, the right side the `Sum.inr`
+half, and the extra edge joins the right vertices numbered `0` and `1`. -/
+
+/-- Vertex set of the sharp example: `⌊n/2⌋ + ⌈n/2⌉ = n` vertices. -/
+@[reducible] def V (n : ℕ) : Type := Fin (n / 2) ⊕ Fin (n - n / 2)
+
+/-- The sharp example: complete bipartite between the two sides, plus the
+single edge between the right vertices numbered `0` and `1`. -/
+@[reducible] def exV (n : ℕ) (a b : V n) : Prop :=
+  match a, b with
+  | Sum.inl _, Sum.inr _ => True
+  | Sum.inr _, Sum.inl _ => True
+  | Sum.inr i, Sum.inr j => i.val = 0 ∧ j.val = 1 ∨ i.val = 1 ∧ j.val = 0
+  | Sum.inl _, Sum.inl _ => False
+
+instance (n : ℕ) : DecidableRel (exV n) := fun a b =>
+  match a, b with
+  | Sum.inl _, Sum.inr _ => isTrue trivial
+  | Sum.inr _, Sum.inl _ => isTrue trivial
+  | Sum.inr i, Sum.inr j =>
+      inferInstanceAs (Decidable (i.val = 0 ∧ j.val = 1 ∨ i.val = 1 ∧ j.val = 0))
+  | Sum.inl _, Sum.inl _ => isFalse (by simp [exV])
+
+/-- The left side as a `Finset`. -/
+def Lset (n : ℕ) : Finset (V n) := (univ : Finset (Fin (n / 2))).image Sum.inl
+
+/-- The right side as a `Finset`. -/
+def Rset (n : ℕ) : Finset (V n) := (univ : Finset (Fin (n - n / 2))).image Sum.inr
+
+lemma card_V (n : ℕ) : Fintype.card (V n) = n := by
+  have h : Fintype.card (Fin (n / 2) ⊕ Fin (n - n / 2)) = n / 2 + (n - n / 2) := by
+    rw [Fintype.card_sum, Fintype.card_fin, Fintype.card_fin]
+  have h2 : n / 2 + (n - n / 2) = n := by omega
+  rw [h2] at h
+  exact h
+
+lemma mem_Lset {n : ℕ} {a : V n} : a ∈ Lset n ↔ ∃ i, a = Sum.inl i := by
+  rw [Lset, mem_image]
+  constructor
+  · rintro ⟨i, _, rfl⟩; exact ⟨i, rfl⟩
+  · rintro ⟨i, rfl⟩; exact ⟨i, mem_univ i, rfl⟩
+
+lemma mem_Rset {n : ℕ} {a : V n} : a ∈ Rset n ↔ ∃ j, a = Sum.inr j := by
+  rw [Rset, mem_image]
+  constructor
+  · rintro ⟨j, _, rfl⟩; exact ⟨j, rfl⟩
+  · rintro ⟨j, rfl⟩; exact ⟨j, mem_univ j, rfl⟩
+
+lemma card_Lset (n : ℕ) : (Lset n).card = n / 2 := by
+  rw [Lset, card_image_of_injective _ Sum.inl_injective, card_univ, Fintype.card_fin]
+
+lemma card_Rset (n : ℕ) : (Rset n).card = n - n / 2 := by
+  rw [Rset, card_image_of_injective _ Sum.inr_injective, card_univ, Fintype.card_fin]
+
+lemma disjoint_Lset_Rset (n : ℕ) : Disjoint (Lset n) (Rset n) := by
+  rw [disjoint_left]
+  intro a ha hb
+  rw [mem_Lset] at ha
+  rw [mem_Rset] at hb
+  obtain ⟨i, hi⟩ := ha
+  obtain ⟨j, hj⟩ := hb
+  rw [hi] at hj
+  exact Sum.inl_ne_inr hj
+
+lemma univ_eq_Lset_union_Rset (n : ℕ) : Lset n ∪ Rset n = (univ : Finset (V n)) := by
+  ext a
+  rw [mem_union, mem_Lset, mem_Rset]
+  constructor
+  · rintro (⟨i, rfl⟩ | ⟨j, rfl⟩) <;> simp
+  · intro _
+    rcases a with i | j
+    · exact Or.inl ⟨i, rfl⟩
+    · exact Or.inr ⟨j, rfl⟩
+
+/-- The only edge inside a part is the extra one between right vertices `0`
+and `1`. -/
+lemma exV_inr_inr {n : ℕ} (i j : Fin (n - n / 2)) :
+    exV n (Sum.inr i) (Sum.inr j) ↔ (i.val = 0 ∧ j.val = 1) ∨ (i.val = 1 ∧ j.val = 0) :=
+  Iff.rfl
+
+lemma exV_inl_inl {n : ℕ} (i j : Fin (n / 2)) : ¬ exV n (Sum.inl i) (Sum.inl j) := by
+  simp [exV]
+
+lemma not_inr_iff_inl {n : ℕ} {a : V n} :
+    (¬ ∃ j, a = Sum.inr j) ↔ ∃ i, a = Sum.inl i := by
+  rcases a with i | j
+  · constructor
+    · intro _; exact ⟨i, rfl⟩
+    · rintro ⟨i', hi⟩ hcon
+      obtain ⟨j', hj⟩ := hcon
+      exact Sum.inl_ne_inr hj
+  · constructor
+    · intro h; exact absurd ⟨j, rfl⟩ h
+    · rintro ⟨i', hi⟩ hcon
+      exact Sum.inr_ne_inl hi
+
+/-- A left vertex is joined to every right vertex. -/
+lemma le_deg_inl (n : ℕ) (i : Fin (n / 2)) :
+    n - n / 2 ≤ dIn (exV n) univ (Sum.inl i) := by
+  rw [dIn]
+  refine le_trans (le_of_eq (card_Rset n).symm) (card_le_card ?_)
+  intro b hb
+  rw [mem_Rset] at hb
+  obtain ⟨j, rfl⟩ := hb
+  simp only [mem_filter, mem_univ, true_and]
+  trivial
+
+/-- A right vertex `j` is joined to every left vertex, and additionally to
+`1` (resp. `0`) when `j` is `0` (resp. `1`). -/
+lemma le_deg_inr (n : ℕ) (hn : 4 ≤ n) (j : Fin (n - n / 2)) :
+    n / 2 + (if j.val = 0 ∨ j.val = 1 then 1 else 0) ≤ dIn (exV n) univ (Sum.inr j) := by
+  have hm2 : 2 ≤ n - n / 2 := by omega
+  obtain ⟨z0, hz0⟩ : ∃ z : Fin (n - n / 2), z.val = 0 := ⟨⟨0, by omega⟩, rfl⟩
+  obtain ⟨z1, hz1⟩ : ∃ z : Fin (n - n / 2), z.val = 1 := ⟨⟨1, by omega⟩, rfl⟩
+  have hz1L : Sum.inr z1 ∉ Lset n := by
+    rw [mem_Lset]
+    rintro ⟨i, hi⟩
+    exact Sum.inr_ne_inl hi
+  have hz0L : Sum.inr z0 ∉ Lset n := by
+    rw [mem_Lset]
+    rintro ⟨i, hi⟩
+    exact Sum.inr_ne_inl hi
+  rw [dIn]
+  have hbase : Lset n ⊆ (univ : Finset (V n)).filter (fun b => exV n (Sum.inr j) b) := by
+    intro b hb
+    rw [mem_Lset] at hb
+    obtain ⟨i, rfl⟩ := hb
+    simp only [mem_filter, mem_univ, true_and]
+    trivial
+  by_cases h0 : j.val = 0
+  · have hsub : Lset n ∪ {Sum.inr z1} ⊆
+        (univ : Finset (V n)).filter (fun b => exV n (Sum.inr j) b) := by
+      intro b hb
+      rw [mem_union, mem_singleton] at hb
+      rcases hb with hb | hb
+      · exact hbase hb
+      · subst hb
+        simp only [mem_filter, mem_univ, true_and, exV_inr_inr]
+        exact Or.inl ⟨h0, hz1⟩
+    have hc : (Lset n ∪ {Sum.inr z1}).card = n / 2 + 1 := by
+      rw [card_union_of_disjoint (disjoint_singleton_right.mpr hz1L), card_Lset, card_singleton]
+    have hval : (if j.val = 0 ∨ j.val = 1 then 1 else 0) = 1 := by
+      rw [if_pos]; exact Or.inl h0
+    rw [hval]
+    calc n / 2 + 1 = (Lset n ∪ {Sum.inr z1}).card := hc.symm
+      _ ≤ _ := card_le_card hsub
+  · by_cases h1 : j.val = 1
+    · have hsub : Lset n ∪ {Sum.inr z0} ⊆
+          (univ : Finset (V n)).filter (fun b => exV n (Sum.inr j) b) := by
+        intro b hb
+        rw [mem_union, mem_singleton] at hb
+        rcases hb with hb | hb
+        · exact hbase hb
+        · subst hb
+          simp only [mem_filter, mem_univ, true_and, exV_inr_inr]
+          exact Or.inr ⟨h1, hz0⟩
+      have hc : (Lset n ∪ {Sum.inr z0}).card = n / 2 + 1 := by
+        rw [card_union_of_disjoint (disjoint_singleton_right.mpr hz0L), card_Lset, card_singleton]
+      have hval : (if j.val = 0 ∨ j.val = 1 then 1 else 0) = 1 := by
+        rw [if_pos]; exact Or.inr h1
+      rw [hval]
+      calc n / 2 + 1 = (Lset n ∪ {Sum.inr z0}).card := hc.symm
+        _ ≤ _ := card_le_card hsub
+    · have hval : (if j.val = 0 ∨ j.val = 1 then 1 else 0) = 0 := by
+        rw [if_neg]; rintro (h | h) <;> [exact h0 h; exact h1 h]
+      rw [hval]
+      exact le_trans (le_of_eq (card_Lset n).symm) (card_le_card hbase)
+
+/-- `⌊n²/4⌋ = ⌊n/2⌋ · ⌈n/2⌉`. -/
+lemma sq_div_four (n : ℕ) : n ^ 2 / 4 = n / 2 * (n - n / 2) := by
+  obtain ⟨k, rfl⟩ | ⟨k, rfl⟩ := Nat.even_or_odd n
+  · have h1 : (k + k) / 2 = k := by omega
+    have h2 : k + k - (k + k) / 2 = k := by omega
+    have h3 : (k + k) ^ 2 = 4 * (k * k) := by ring
+    have h4 : (k + k) ^ 2 / 4 = k * k := by
+      rw [h3]
+      omega
+    rw [h4, h2, h1]
+  · have h1 : (2 * k + 1) / 2 = k := by omega
+    have h2 : 2 * k + 1 - (2 * k + 1) / 2 = k + 1 := by omega
+    have h3 : (2 * k + 1) ^ 2 = 1 + 4 * (k * k + k) := by ring
+    have h4 : (2 * k + 1) ^ 2 / 4 = k * k + k := by
+      rw [h3]
+      omega
+    rw [h4, h2, h1]
+    ring
+
+/-- The number of right vertices numbered `0` or `1` is `2`. -/
+lemma card_zero_one (n : ℕ) (hn : 4 ≤ n) :
+    ((univ : Finset (Fin (n - n / 2))).filter (fun j => j.val = 0 ∨ j.val = 1)).card = 2 := by
+  have hset : (univ : Finset (Fin (n - n / 2))).filter (fun j => j.val = 0 ∨ j.val = 1)
+      = {(⟨0, by omega⟩ : Fin (n - n / 2)), (⟨1, by omega⟩ : Fin (n - n / 2))} := by
+    ext j
+    simp only [mem_filter, mem_univ, true_and, mem_insert, mem_singleton]
+    constructor
+    · rintro (h | h)
+      · exact Or.inl (Fin.ext (by simpa using h))
+      · exact Or.inr (Fin.ext (by simpa using h))
+    · rintro (h | h) <;> rw [h] <;> simp
+  rw [hset, card_pair]
+  intro h
+  have : (⟨0, by omega⟩ : Fin (n - n / 2)).val = (⟨1, by omega⟩ : Fin (n - n / 2)).val :=
+    congrArg Fin.val h
+  simp at this
+
+/-- The example has at least `⌊n²/4⌋ + 1` edges. -/
+theorem edge_count (n : ℕ) (hn : 4 ≤ n) :
+    2 * (n ^ 2 / 4 + 1) ≤ degSum (exV n) univ := by
+  set f : V n → ℕ := fun a => dIn (exV n) univ a with hf
+  have hdeg : degSum (exV n) univ = ∑ a ∈ (univ : Finset (V n)), f a := by
+    rw [degSum, hf]
+  rw [hdeg]
+  have hsplit : (∑ a ∈ (univ : Finset (V n)), f a)
+      = (∑ a ∈ Lset n, f a) + ∑ a ∈ Rset n, f a := by
+    rw [← univ_eq_Lset_union_Rset n]
+    exact sum_union (s₁ := Lset n) (s₂ := Rset n) (disjoint_Lset_Rset n)
+  rw [hsplit]
+  simp only [hf]
+  have hL : n / 2 * (n - n / 2) ≤ ∑ a ∈ Lset n, dIn (exV n) univ a := by
+    rw [Lset, sum_image (fun x _ y _ h => Sum.inl.inj h)]
+    calc n / 2 * (n - n / 2) = ∑ _i ∈ (univ : Finset (Fin (n / 2))), (n - n / 2) := by
+          rw [sum_const, card_univ, Fintype.card_fin]
+          simp [nsmul_eq_mul]
+      _ ≤ ∑ i ∈ (univ : Finset (Fin (n / 2))), dIn (exV n) univ (Sum.inl i) :=
+          sum_le_sum fun i _ => le_deg_inl n i
+  have hR : (n - n / 2) * (n / 2) + 2 ≤ ∑ a ∈ Rset n, dIn (exV n) univ a := by
+    rw [Rset, sum_image (fun x _ y _ h => Sum.inr.inj h)]
+    have h1 : (∑ j ∈ (univ : Finset (Fin (n - n / 2))), n / 2)
+        = (n - n / 2) * (n / 2) := by
+      rw [sum_const, card_univ, Fintype.card_fin]
+      simp [nsmul_eq_mul]
+    have h2 : (∑ j ∈ (univ : Finset (Fin (n - n / 2))),
+          (if j.val = 0 ∨ j.val = 1 then 1 else 0)) = 2 := by
+      rw [← sum_filter, ← card_eq_sum_ones]
+      exact card_zero_one n hn
+    calc (n - n / 2) * (n / 2) + 2
+        = ∑ j ∈ (univ : Finset (Fin (n - n / 2))),
+            ((n / 2 + (if j.val = 0 ∨ j.val = 1 then 1 else 0)) : ℕ) := by
+          rw [sum_add_distrib, h1, h2]
+      _ ≤ ∑ j ∈ (univ : Finset (Fin (n - n / 2))), dIn (exV n) univ (Sum.inr j) :=
+          sum_le_sum fun j _ => le_deg_inr n hn j
+  have hsq := sq_div_four n
+  calc 2 * (n ^ 2 / 4 + 1) = 2 * (n / 2 * (n - n / 2) + 1) := by rw [hsq]
+    _ = n / 2 * (n - n / 2) + ((n - n / 2) * (n / 2) + 2) := by ring
+    _ ≤ _ := Nat.add_le_add hL hR
+
+/-- The left vertices of `T`. -/
+def inlPart (n : ℕ) (T : Finset (V n)) : Finset (V n) :=
+  T.filter (fun a => ∃ i, a = Sum.inl i)
+
+/-- The right vertices of `T`. -/
+def inrPart (n : ℕ) (T : Finset (V n)) : Finset (V n) :=
+  T.filter (fun a => ∃ j, a = Sum.inr j)
+
+lemma inlPart_le_one (n : ℕ) {T : Finset (V n)} (hT : IsTri (exV n) T) :
+    (inlPart n T).card ≤ 1 := by
+  rw [card_le_one]
+  intro a ha b hb
+  rw [inlPart, mem_filter] at ha hb
+  obtain ⟨haT, ⟨i, rfl⟩⟩ := ha
+  obtain ⟨hbT, ⟨k, rfl⟩⟩ := hb
+  by_contra hne
+  exact exV_inl_inl i k (hT.2 (Sum.inl i) haT (Sum.inl k) hbT hne)
+
+lemma inrPart_ge_two (n : ℕ) (hn : 4 ≤ n) {T : Finset (V n)} (hT : IsTri (exV n) T) :
+    2 ≤ (inrPart n T).card := by
+  have hcompl : (T.filter (fun a => ¬ ∃ j, a = Sum.inr j)).card = (inlPart n T).card := by
+    rw [inlPart]
+    congr 1
+    ext a
+    simp only [mem_filter]
+    exact and_congr_right fun _ => not_inr_iff_inl
+  have hsum := card_filter_add_card_filter_not (s := T) (fun a : V n => ∃ j, a = Sum.inr j)
+  rw [hcompl, hT.1] at hsum
+  have hleft := inlPart_le_one n hT
+  show 2 ≤ (T.filter (fun a : V n => ∃ j, a = Sum.inr j)).card
+  omega
+
+/-- Every triangle of the example contains the two right vertices numbered
+`0` and `1`. -/
+lemma tri_contains_pair (n : ℕ) (hn : 4 ≤ n) {T : Finset (V n)} (hT : IsTri (exV n) T) :
+    ∃ i j : Fin (n - n / 2), i.val = 0 ∧ j.val = 1 ∧
+      Sum.inr i ∈ T ∧ Sum.inr j ∈ T := by
+  have hright : 2 ≤ (inrPart n T).card := inrPart_ge_two n hn hT
+  have hne2 : ∃ a ∈ inrPart n T, ∃ b ∈ inrPart n T, a ≠ b := by
+    rw [← one_lt_card]; omega
+  obtain ⟨a, ha, b, hb, hab⟩ := hne2
+  rw [inrPart, mem_filter] at ha hb
+  obtain ⟨haT, ⟨i, hi⟩⟩ := ha
+  obtain ⟨hbT, ⟨k, hk⟩⟩ := hb
+  rw [hi] at haT
+  rw [hk] at hbT
+  have hne : (Sum.inr i : V n) ≠ (Sum.inr k : V n) := by
+    rw [← hi, ← hk]; exact hab
+  have hstep := (exV_inr_inr i k).mp (hT.2 (Sum.inr i : V n) haT (Sum.inr k : V n) hbT hne)
+  rcases hstep with ⟨h1, h2⟩ | ⟨h1, h2⟩
+  · exact ⟨i, k, h1, h2, haT, hbT⟩
+  · exact ⟨k, i, h2, h1, hbT, haT⟩
+
+/-- The example does contain a triangle. -/
+lemma exists_tri_exV (n : ℕ) (hn : 4 ≤ n) : ∃ T : Finset (V n), IsTri (exV n) T := by
+  obtain ⟨z0, hz0⟩ : ∃ z : Fin (n - n / 2), z.val = 0 := ⟨⟨0, by omega⟩, rfl⟩
+  obtain ⟨z1, hz1⟩ : ∃ z : Fin (n - n / 2), z.val = 1 := ⟨⟨1, by omega⟩, rfl⟩
+  have hh : 0 < n / 2 := by omega
+  have hxy : (Sum.inl (⟨0, hh⟩ : Fin (n / 2)) : V n) ≠ Sum.inr z0 := by
+    intro h; exact Sum.inl_ne_inr h
+  have hxz : (Sum.inl (⟨0, hh⟩ : Fin (n / 2)) : V n) ≠ Sum.inr z1 := by
+    intro h; exact Sum.inl_ne_inr h
+  have hyz : (Sum.inr z0 : V n) ≠ Sum.inr z1 := by
+    intro h
+    have hv : z0.val = z1.val := congrArg Fin.val (Sum.inr.inj h)
+    omega
+  refine ⟨{(Sum.inl (⟨0, hh⟩ : Fin (n / 2)) : V n), Sum.inr z0, Sum.inr z1}, ?_, ?_⟩
+  · rw [card_eq_three]
+    exact ⟨_, _, _, hxy, hxz, hyz, rfl⟩
+  · intro a ha b hb hab
+    simp only [mem_insert, mem_singleton] at ha hb
+    rcases ha with rfl | rfl | rfl <;> rcases hb with rfl | rfl | rfl
+    · exact absurd rfl hab
+    · trivial
+    · trivial
+    · trivial
+    · exact absurd rfl hab
+    · rw [exV_inr_inr]
+      exact Or.inl ⟨hz0, hz1⟩
+    · trivial
+    · rw [exV_inr_inr]
+      exact Or.inr ⟨hz1, hz0⟩
+    · exact absurd rfl hab
+
+/-- **Sharpness**: any two distinct triangles of the example share an edge,
+so at most one edge-disjoint triangle exists. -/
+theorem share_pair (n : ℕ) (hn : 4 ≤ n) {T1 T2 : Finset (V n)}
+    (h1 : IsTri (exV n) T1) (h2 : IsTri (exV n) T2) (hne : T1 ≠ T2) :
+    (T1 ∩ T2).card = 2 := by
+  obtain ⟨i, j, hi, hj, h1i, h1j⟩ := tri_contains_pair n hn h1
+  obtain ⟨i', j', hi', hj', h2i, h2j⟩ := tri_contains_pair n hn h2
+  have hii : i = i' := Fin.ext (by omega)
+  have hjj : j = j' := Fin.ext (by omega)
+  have hmem : ({Sum.inr i, Sum.inr j} : Finset (V n)) ⊆ T1 ∩ T2 := by
+    intro x hx
+    rw [mem_inter]
+    simp only [mem_insert, mem_singleton] at hx
+    constructor
+    · rcases hx with rfl | rfl
+      · exact h1i
+      · exact h1j
+    · rcases hx with rfl | rfl
+      · rw [hii]; exact h2i
+      · rw [hjj]; exact h2j
+  have hdist : (Sum.inr i : V n) ≠ Sum.inr j := by
+    intro h
+    have hv : i.val = j.val := congrArg Fin.val (Sum.inr.inj h)
+    omega
+  have hge : 2 ≤ (T1 ∩ T2).card := by
+    have hle' := card_le_card hmem
+    rw [card_pair hdist] at hle'
+    exact hle'
+  have hle : (T1 ∩ T2).card ≤ 2 := by
+    have hc := card_le_card (inter_subset_left : T1 ∩ T2 ⊆ T1)
+    rw [h1.1] at hc
+    by_contra hcon
+    push Not at hcon
+    have heq : T1 ∩ T2 = T1 := eq_of_subset_of_card_le inter_subset_left (by omega)
+    have hsub2 : T1 ⊆ T2 := by rw [← heq]; exact inter_subset_right
+    have heq2 : T1 = T2 := eq_of_subset_of_card_le hsub2 (by omega)
+    exact hne heq2
+  omega
+
+/-- **JSP-000839, sharpness at every order `n ≥ 4`**: an `n`-vertex graph with
+`⌊n²/4⌋ + 1` edges in which at most one edge-disjoint triangle exists. -/
+theorem answer_general (n : ℕ) (hn : 4 ≤ n) :
+    Fintype.card (V n) = n ∧
+      2 * (n ^ 2 / 4 + 1) ≤ degSum (exV n) univ ∧
+      (∃ T : Finset (V n), IsTri (exV n) T) ∧
+      (∀ T1 T2 : Finset (V n), IsTri (exV n) T1 → IsTri (exV n) T2 → T1 ≠ T2 →
+        (T1 ∩ T2).card = 2) :=
+  ⟨card_V n, edge_count n hn, exists_tri_exV n hn,
+    fun _ _ h1 h2 hne => share_pair n hn h1 h2 hne⟩
 
 end JSP839
